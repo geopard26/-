@@ -1,23 +1,27 @@
+import random
 from enum import Enum
-from pydantic import BaseModel
-from typing import List, Optional
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
+
 
 class DogType(str, Enum):
     terrier = "terrier"
     bulldog = "bulldog"
     dalmatian = "dalmatian"
 
+
 class Dog(BaseModel):
     name: str
     pk: int
     kind: DogType
 
+
 class Timestamp(BaseModel):
     id: int
     timestamp: int
+
 
 dogs_db = {
     0: Dog(name='Bob', pk=0, kind='terrier'),
@@ -34,47 +38,58 @@ post_db = [
     Timestamp(id=1, timestamp=10)
 ]
 
-@app.get('/', response_model=str)
-def root():
-    return "Hello, World!"
 
-@app.get('/post', response_model=List[Timestamp], summary='Get Posts')
-def get_posts():
+@app.get('/')
+def root():
+    return "string"
+
+
+@app.get('/post', response_model=list[Timestamp], summary='Get Posts')
+def post():
     return post_db
 
+
 @app.post('/post', response_model=Timestamp, summary='Create Post')
-def create_post():
-    new_id = post_db[-1].id + 1 if post_db else 0
-    new_timestamp = post_db[-1].timestamp + 1 if post_db else 0
-    new_post = Timestamp(id=new_id, timestamp=new_timestamp)
+def post():
+    last_post = post_db[-1]
+    new_post = Timestamp(id=last_post.id + 1, timestamp=last_post.timestamp + 1)
     post_db.append(new_post)
     return new_post
 
-@app.get('/dog', response_model=List[Dog], summary='Get Dogs')
-def get_dogs(kind: Optional[DogType] = None):
-    if kind:
-        return [dog for dog in dogs_db.values() if dog.kind == kind]
-    return list(dogs_db.values())
+
+@app.get('/dog', response_model=list[Dog], summary='Get Dogs')
+def dogs(kind: DogType = None):
+    return filter(lambda dog: True if kind is None else kind == dog.kind, list(dogs_db.values()))
+
 
 @app.post('/dog', response_model=Dog, summary='Create Dog')
 def create_dog(dog: Dog):
-    if not isinstance(dog.pk, int):
-        raise HTTPException(status_code=400, detail='PK must be an integer.')
-    if dog.pk in dogs_db:
-        raise HTTPException(status_code=409, detail='The specified PK already exists.')
+    existing_dog = dogs_db.get(dog.pk)
+
+    if existing_dog is not None:
+        raise HTTPException(status_code=409,
+                            detail='The specified PK already exists.')
+
     dogs_db[dog.pk] = dog
     return dog
 
-@app.get('/dog/{pk}', response_model=Dog, summary='Get Dog By Pk')
-def get_dog(pk: int):
+
+@app.get('/dog/{pk}', response_model=Dog | None, summary='Get Dog By Pk')
+def create_dog(pk: int):
     dog = dogs_db.get(pk)
-    if dog is None:
-        raise HTTPException(status_code=404, detail='Dog not found.')
-    return dog
+    if dog is not None:
+        return dog
+    else:
+        raise HTTPException(status_code=404,
+                            detail='Not found PK.')
+
 
 @app.patch('/dog/{pk}', response_model=Dog, summary='Update Dog')
-def update_dog(pk: int, updated_dog: Dog):
-    if pk not in dogs_db:
-        raise HTTPException(status_code=404, detail='Dog not found.')
-    dogs_db[pk] = updated_dog
-    return updated_dog
+def patch_dog(pk: int, dog: Dog):
+    old_dog = dogs_db.get(pk)
+    if old_dog is not None:
+        dogs_db[pk] = dog
+        return dog
+    else:
+        raise HTTPException(status_code=404,
+                            detail='Not found PK.')
